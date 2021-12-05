@@ -4,6 +4,7 @@
 // https://en.bitcoin.it/wiki/Merged_mining_specification#Merged_mining_coinbase
 
 #include "stratum.h"
+#include "segwit.h"
 
 #define TX_VALUE(v, s)	((unsigned int)(v>>s)&0xff)
 
@@ -156,19 +157,30 @@ void coinbase_create(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE *templ, json_value *
 		strcpy(eversion1, "03000500");
 
 	char script1[4*1024];
-	sprintf(script1, "%s%s%s08", eheight, templ->flags, etime);
+  if(strcmp(coind->symbol, "DYNAMO") == 0) {
+    sprintf(script1, "%sffffffff", eheight); // TODO
+  } else {
+    sprintf(script1, "%s%s%s08", eheight, templ->flags, etime);
+  }
 
 	char script2[32] = "506f6f6c4d696e652e78797a"; // "yiimp\0" in hex ascii
 
 	if(!coind->pos && !coind->isaux && templ->auxs_size)
 		coinbase_aux(templ, script2);
 
-	int script_len = strlen(script1)/2 + strlen(script2)/2 + 8;
+	int script_len;
+  if(strcmp(coind->symbol, "DYNAMO") == 0) {
+    script_len = strlen(eheight) / 2;
+  } else {
+    script_len = strlen(script1)/2 + strlen(script2)/2 + 8;
+  }
 	sprintf(templ->coinb1, "%s%s01"
 		"0000000000000000000000000000000000000000000000000000000000000000"
 		"ffffffff%02x%s", eversion1, entime, script_len, script1);
 
-	sprintf(templ->coinb2, "%s00000000", script2);
+	if(strcmp(coind->symbol, "DYNAMO") != 0) {
+    sprintf(templ->coinb2, "%s00000000", script2);
+  }
 
 	// segwit commitment, if needed
 	if (templ->has_segwit_txs)
@@ -183,6 +195,16 @@ void coinbase_create(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE *templ, json_value *
 		if (strlen(coind->charity_address) == 0)
 			sprintf(coind->charity_address, "EdFwYw4Mo2Zq6CFM2yNJgXvE2DTJxgdBRX");
 	}
+	else if(strcmp(coind->symbol, "DYNAMO") == 0)
+	{
+    sprintf(templ->coinb2, "04");
+		job_pack_segwit_tx(templ->coinb2, available, "dy1qjyfwpa4z07g8zpene6usfjyafpl3knssj2vfdl");
+		job_pack_segwit_tx(templ->coinb2, 5000000, "dy1qzvx3yfrucqa2ntsw8e7dyzv6u6dl2c2wjvx5jy");
+		job_pack_segwit_tx(templ->coinb2, 5000000, "dy1qnt3gjkefzez7my4zmwx9w0xs3c2jcxks6kxrgp");
+		strcat(templ->coinb2, commitment);
+    strcat(templ->coinb2, "00000000"); // locktime
+    return;
+  }
 	else if(strcmp(coind->symbol, "DYN") == 0)
 	{
 		char script_dests[2048] = { 0 };

@@ -1,3 +1,10 @@
+#pragma once
+
+#include <pthread.h>
+#include <string.h>
+#include <vector>
+
+using namespace std;
 
 struct YAAMP_CLIENT;
 

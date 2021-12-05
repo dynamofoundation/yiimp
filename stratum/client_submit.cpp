@@ -1,5 +1,6 @@
 
 #include "stratum.h"
+#include "util.h"
 
 uint64_t lyra2z_height = 0;
 
@@ -59,14 +60,81 @@ void build_submit_values(YAAMP_JOB_VALUES *submitvalues, YAAMP_JOB_TEMPLATE *tem
 	binlify(submitvalues->header_bin, submitvalues->header_be);
 
 //	printf("%s\n", submitvalues->header_be);
-	int header_len = strlen(submitvalues->header)/2;
-	g_current_algo->hash_function((char *)submitvalues->header_bin, (char *)submitvalues->hash_bin, header_len);
+  int header_len = strlen(submitvalues->header)/2;
+  g_current_algo->hash_function((char *)submitvalues->header_bin, (char *)submitvalues->hash_bin, header_len);
 
 	hexlify(submitvalues->hash_hex, submitvalues->hash_bin, 32);
 	string_be(submitvalues->hash_hex, submitvalues->hash_be);
 }
 
 /////////////////////////////////////////////
+
+static void create_dynamo_header(YAAMP_JOB_TEMPLATE *templ, YAAMP_JOB_VALUES *out, char* merkle_root, const char *ntime_str, const char *nonce)
+{
+    unsigned char coinbase[4 * 1024] = {0};
+    binlify(coinbase, templ->coinb1);
+    binlify(coinbase + (strlen(templ->coinb1) / 2), templ->coinb2);
+    size_t coinbase_size = (strlen(templ->coinb1) + strlen(templ->coinb2)) / 2;
+
+    uint32_t ntime{};
+    if (ntime_str != NULL) {
+      binlify((unsigned char*)(&ntime), ntime_str);
+    } else {
+      binlify((unsigned char*)(&ntime), templ->ntime);
+    }
+    ntime = bswap32(ntime);
+
+    sha256d((unsigned char*)merkle_root, coinbase, coinbase_size);
+
+    *(out->header_bin) = 0x40;
+    *(out->header_bin + 1) = 0x00;
+    *(out->header_bin + 2) = 0x00;
+    *(out->header_bin + 3) = 0x00;
+
+    binlify(out->header_bin + 4, templ->prevhash_hex);
+    memcpy(out->header_bin + 36, merkle_root, 32);
+    memcpy(out->header_bin + 68, &ntime, 4); // TODO
+
+    unsigned char bits[4];
+    binlify(bits, templ->nbits);
+    memcpy(out->header_bin + 72, &bits[3], 1);
+    memcpy(out->header_bin + 73, &bits[2], 1);
+    memcpy(out->header_bin + 74, &bits[1], 1);
+    memcpy(out->header_bin + 75, &bits[0], 1);
+    binlify(out->header_bin + 76, nonce);
+
+    for (int i = 0; i < 16; i++) {
+        unsigned char tmp = merkle_root[i];
+        merkle_root[i] = merkle_root[31 - i];
+        merkle_root[31 - i] = tmp;
+    }
+
+
+    unsigned char header[80];
+    memcpy(header, out->header_bin, 80);
+    for (int i = 0; i < 16; i++) {
+        unsigned char swap = header[4 + i];
+        header[4 + i] = header[35 - i];
+        header[35 - i] = swap;
+    }
+    hexlify(out->header_be, header, 80);
+}
+
+static void build_submit_values_dynamo(YAAMP_JOB_VALUES *submitvalues, YAAMP_JOB_TEMPLATE *templ,
+	const char *ntime, const char *nonce)
+{
+  char merkle_root[32];
+  create_dynamo_header(templ, submitvalues, merkle_root, ntime, nonce);
+
+  dynamo::execute_program((char *)submitvalues->hash_bin,
+        submitvalues->header_bin,
+        templ->program,
+        templ->prevhash_hex,
+        merkle_root);
+
+	hexlify(submitvalues->hash_hex, submitvalues->hash_bin, 32);
+	string_be(submitvalues->hash_hex, submitvalues->hash_be);
+}
 
 static void create_decred_header(YAAMP_JOB_TEMPLATE *templ, YAAMP_JOB_VALUES *out,
 	const char *ntime, const char *nonce, const char *nonce2, const char *vote, bool usegetwork)
@@ -227,7 +295,7 @@ static void client_do_submit(YAAMP_CLIENT *client, YAAMP_JOB *job, YAAMP_JOB_VAL
 		}
 	}
 
-	if(hash_int <= coin_target)
+  if(hash_int <= coin_target)
 	{
 		char count_hex[8] = { 0 };
 		if (templ->txcount <= 252)
@@ -240,9 +308,9 @@ static void client_do_submit(YAAMP_CLIENT *client, YAAMP_JOB *job, YAAMP_JOB_VAL
 		if (!strcmp("sha256csm", g_current_algo->name)) 
 		{
 			sprintf(block_hex, "%s%s%s%s", submitvalues->header_be, "0000000000000000000000000000000000000000000000000000000000000000", count_hex, submitvalues->coinbase);
-		} 
-		else 
-		{
+		} else if (!strcmp("dynamo", g_current_algo->name)) {
+			sprintf(block_hex, "%s%s%s%s", submitvalues->header_be, count_hex, job->templ->coinb1, job->templ->coinb2);
+    } else {
 			sprintf(block_hex, "%s%s%s", submitvalues->header_be, count_hex, submitvalues->coinbase);
 		}
 
@@ -328,7 +396,7 @@ static void client_do_submit(YAAMP_CLIENT *client, YAAMP_JOB *job, YAAMP_JOB_VAL
 				debuglog("--------------------------------------------------------------\n");
 			}
 		}
-	}
+  }
 
 	free(block_hex);
 }
@@ -499,10 +567,13 @@ bool client_submit(YAAMP_CLIENT *client, json_value *json_params)
 	YAAMP_JOB_VALUES submitvalues;
 	memset(&submitvalues, 0, sizeof(submitvalues));
 
-	if(is_decred)
+  if (!strcmp(g_current_algo->name, "dynamo")) {
+		build_submit_values_dynamo(&submitvalues, templ, ntime, nonce);
+  } else if(is_decred) {
 		build_submit_values_decred(&submitvalues, templ, client->extranonce1, extranonce2, ntime, nonce, vote, true);
-	else
+  } else {
 		build_submit_values(&submitvalues, templ, client->extranonce1, extranonce2, ntime, nonce);
+  }
 
 	if (templ->height && !strcmp(g_current_algo->name,"lyra2z")) {
 		lyra2z_height = templ->height;
@@ -513,12 +584,12 @@ bool client_submit(YAAMP_CLIENT *client, json_value *json_params)
         uint64_t coin_target = decode_compact(templ->nbits) / 0x10000;
 
 if (g_debuglog_hash) {
-        debuglog("hash %016lx \n", hash_int);
-        debuglog("shar %016lx \n", user_target);
-        debuglog("coin %016lx \n", coin_target);
+        debuglog("hash %lu \n", hash_int);
+        debuglog("shar %lu \n", user_target);
+        debuglog("coin %lu \n", coin_target);
 }
 
-	if(hash_int > user_target)
+  if(hash_int > user_target)
 	{
 		client_submit_error(client, job, 26, "Low difficulty share", extranonce2, ntime, nonce);
 		return true;

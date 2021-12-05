@@ -55,6 +55,8 @@ struct YAAMP_JOB_TEMPLATE
 	char coinforsubmitb2[4*1024];
 	bool isbitcash;
 
+	char program[4*1024];
+
 	char header[256];
 
 	bool has_segwit_txs;

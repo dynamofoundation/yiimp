@@ -228,6 +228,42 @@ static void decred_fix_template(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE *templ, j
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+static bool coind_get_program(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE* templ)
+{
+	json_value *json = rpc_call(&coind->rpc, "gethashfunction", "[]");
+	if(!json || json_is_null(json))
+	{
+    coind_error(coind, "gethashfunction");
+		return false;
+	}
+
+	json_value *json_result = json_get_array(json, "result");
+	if(!json_result || json_is_null(json_result) || json_result->u.array.length == 0)
+	{
+		coind_error(coind, "gethashfunction result");
+		json_value_free(json);
+		return false;
+	}
+
+  for (int i = 0; i < json_result->u.array.length; i++) {
+    json_value *val = json_result->u.array.values[i];
+    int64_t start_time = json_get_int(val, "start_time");
+    if (start_time <= templ->height) {
+      const char* program = json_get_string(val, "program");
+      strcpy(templ->program, program);
+      // replace new lines with $
+      for (int i = 0; i < strlen(templ->program); i++) {
+        if (templ->program[i] == '\n') {
+          templ->program[i] = '$';
+        }
+      }
+      return true;
+    }
+  }
+
+  return false;
+}
+
 YAAMP_JOB_TEMPLATE *coind_create_template(YAAMP_COIND *coind)
 {
 	if(coind->usememorypool)
@@ -261,7 +297,7 @@ YAAMP_JOB_TEMPLATE *coind_create_template(YAAMP_COIND *coind)
 	if(json_rules && !strlen(coind->witness_magic) && json_rules->u.array.length) {
 		for (int i=0; i<json_rules->u.array.length; i++) {
 			json_value *val = json_rules->u.array.values[i];
-			if(!strcmp(val->u.string.ptr, "segwit")) {
+			if(!strcmp(val->u.string.ptr, "segwit") || !strcmp(val->u.string.ptr, "!segwit")) {
 				const char *commitment = json_get_string(json_result, "default_witness_commitment");
 				strcpy(coind->witness_magic, "aa21a9ed");
 				if (commitment && strlen(commitment) > 12) {
@@ -352,6 +388,12 @@ YAAMP_JOB_TEMPLATE *coind_create_template(YAAMP_COIND *coind)
 		ser_string_be2(sc_root, &templ->extradata_be[ 0], 8);
 		ser_string_be2(sc_utxo, &templ->extradata_be[64], 8);
 	}
+
+  // get program for DYNAMO and return if it failed
+	if (strcmp(coind->symbol, "DYNAMO") == 0 && !coind_get_program(coind, templ)) {
+    debuglog("failed to get hash function\n");
+ 		return NULL;
+  }
 
 	if (strcmp(coind->rpcencoding, "DCR") == 0) {
 		decred_fix_template(coind, templ, json_result);
@@ -444,6 +486,10 @@ YAAMP_JOB_TEMPLATE *coind_create_template(YAAMP_COIND *coind)
 		// coinbasevalue is a total with all tx fees, need to reduce it if some are skipped
 		templ->value -= templ->filtered_txs_fee;
 	}
+
+	if (!strcmp(coind->symbol, "DYNAMO")) {
+    templ->has_segwit_txs = true;
+  }
 
 	templ->txmerkles[0] = '\0';
 	if(templ->has_segwit_txs) {

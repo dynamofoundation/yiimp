@@ -99,4 +99,7 @@ void client_initialize_difficulty(YAAMP_CLIENT *client)
 		client->difficulty_fixed = true;
 	}
 
+  if (client->difficulty_actual <= 0.0) {
+    client->difficulty_actual = 1.0;
+  }
 }

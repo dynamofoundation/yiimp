@@ -16,7 +16,16 @@ static void job_mining_notify_buffer(YAAMP_JOB *job, char *buffer)
 {
 	YAAMP_JOB_TEMPLATE *templ = job->templ;
 
-	if (!strcmp(g_stratum_algo, "lbry")) {
+	if (!strcmp(g_stratum_algo, "dynamo")) {
+		sprintf(buffer, "{\"id\":null,\"method\":\"mining.notify\",\"params\":["
+			"\"%x\",\"%s\",\"%s\",\"%s\",[%s],\"%s\",\"%s\",\"%s\",\"",
+			job->id, templ->prevhash_hex, templ->coinb1, templ->coinb2,
+			templ->txmerkles, templ->version, templ->nbits, templ->ntime);
+    // printf may not work for more than 500~ bytes
+    strcat(buffer, templ->program);
+    strcat(buffer, "\",true]}\n");
+		return;
+  }	else if (!strcmp(g_stratum_algo, "lbry")) {
 		sprintf(buffer, "{\"id\":null,\"method\":\"mining.notify\",\"params\":["
 			"\"%x\",\"%s\",\"%s\",\"%s\",\"%s\",[%s],\"%s\",\"%s\",\"%s\",true]}\n",
 			job->id, templ->prevhash_be, templ->claim_be, templ->coinb1, templ->coinb2,
