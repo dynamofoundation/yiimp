@@ -126,14 +126,18 @@ static void build_submit_values_dynamo(YAAMP_JOB_VALUES *submitvalues, YAAMP_JOB
   char merkle_root[32];
   create_dynamo_header(templ, submitvalues, merkle_root, ntime, nonce);
 
-  dynamo::execute_program((char *)submitvalues->hash_bin,
-        submitvalues->header_bin,
-        templ->program,
-        templ->prevhash_hex,
-        merkle_root);
+  char hash[32] = {0};
+  dynamo::execute_program(
+    hash,
+    submitvalues->header_bin,
+    templ->program,
+    templ->prevhash_hex,
+    merkle_root);
 
-	hexlify(submitvalues->hash_hex, submitvalues->hash_bin, 32);
-	string_be(submitvalues->hash_hex, submitvalues->hash_be);
+	hexlify(submitvalues->hash_be, (unsigned char*)hash, 32);
+  for (uint32_t i = 0; i < 32; i++)
+    submitvalues->hash_bin[i] = hash[31 - i];
+	hexlify(submitvalues->hash_hex, (unsigned char*)submitvalues->hash_bin, 32);
 }
 
 static void create_decred_header(YAAMP_JOB_TEMPLATE *templ, YAAMP_JOB_VALUES *out,
