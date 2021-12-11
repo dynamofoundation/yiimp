@@ -198,7 +198,7 @@ void coinbase_create(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE *templ, json_value *
 	else if(strcmp(coind->symbol, "DYNAMO") == 0)
 	{
     sprintf(templ->coinb2, "04");
-		job_pack_segwit_tx(templ->coinb2, available, "dy1qjyfwpa4z07g8zpene6usfjyafpl3knssj2vfdl");
+		job_pack_segwit_tx(templ->coinb2, available, coind->wallet);
 		job_pack_segwit_tx(templ->coinb2, 5000000, "dy1qzvx3yfrucqa2ntsw8e7dyzv6u6dl2c2wjvx5jy");
 		job_pack_segwit_tx(templ->coinb2, 5000000, "dy1qnt3gjkefzez7my4zmwx9w0xs3c2jcxks6kxrgp");
 		strcat(templ->coinb2, commitment);
