@@ -245,23 +245,17 @@ static bool coind_get_program(YAAMP_COIND *coind, YAAMP_JOB_TEMPLATE* templ)
 		return false;
 	}
 
-  for (int i = 0; i < json_result->u.array.length; i++) {
-    json_value *val = json_result->u.array.values[i];
-    int64_t start_time = json_get_int(val, "start_time");
-    if (start_time <= templ->height) {
-      const char* program = json_get_string(val, "program");
-      strcpy(templ->program, program);
-      // replace new lines with $
-      for (int i = 0; i < strlen(templ->program); i++) {
-        if (templ->program[i] == '\n') {
-          templ->program[i] = '$';
-        }
-      }
-      return true;
-    }
-  }
 
-  return false;
+	json_value *val = json_result->u.array.values[0];
+	const char* program = json_get_string(val, "program");
+	strcpy(templ->program, program);
+	// replace new lines with $
+	for (int i = 0; i < strlen(templ->program); i++) {
+		if (templ->program[i] == '\n') {
+		templ->program[i] = '$';
+		}
+	}
+	return true;
 }
 
 YAAMP_JOB_TEMPLATE *coind_create_template(YAAMP_COIND *coind)
